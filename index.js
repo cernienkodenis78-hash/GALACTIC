@@ -1,8 +1,9 @@
-const bedrock = require('bedrock-protocol');
+const { createPowerStackClient } = require('./lib/powerstack-bedrock');
 
 const host = process.env.MC_HOST;
 const port = Number(process.env.MC_PORT || 19132);
-const username = process.env.BOT_USERNAME || 'GalacticGuard';
+const username = process.env.BOT_USERNAME || 'PowerUpStackGuard';
+const version = process.env.MC_VERSION || '1.26.45';
 
 if (!host) {
   console.error('Missing MC_HOST environment variable.');
@@ -10,25 +11,19 @@ if (!host) {
 }
 
 console.log(`Starting GalacticGuard for ${host}:${port} as ${username}`);
+console.log(`PowerStack-Bedrock adapter; protocol version: ${version}`);
 
-const client = bedrock.createClient({
-  host,
-  port,
-  username,
-  // Match the server's exact Bedrock version (PowerUpStack reports 1.26.45.1).
-  // bedrock-protocol identifies this protocol family as 1.26.45.
-  version: '1.26.45',
-  offline: process.env.BEDROCK_OFFLINE_MODE === 'true',
-  followPort: false,
-  pingTimeout: 10000,
-  connectTimeout: 15000,
-});
+let client;
+try {
+  client = createPowerStackClient({ host, port, username, version });
+} catch (error) {
+  console.error('Could not create Bedrock client:', error);
+  process.exit(1);
+}
 
 client.on('join', () => console.log('Connected to the Bedrock server.'));
 client.on('spawn', () => console.log('Bot spawned in the world.'));
-client.on('disconnect', (packet) => {
-  console.log('Disconnected:', packet);
-});
+client.on('disconnect', (packet) => console.log('Disconnected:', packet));
 client.on('close', () => console.log('Connection closed.'));
 client.on('error', (error) => console.error('Bot error:', error));
 
