@@ -15,9 +15,10 @@ const client = bedrock.createClient({
   host,
   port,
   username,
+  // Match the server's exact Bedrock version (PowerUpStack reports 1.26.45.1).
+  // bedrock-protocol identifies this protocol family as 1.26.45.
+  version: '1.26.45',
   offline: process.env.BEDROCK_OFFLINE_MODE === 'true',
-  // Keep the explicitly configured external Bedrock port; do not replace it
-  // with the internal port advertised by some Geyser/proxy setups.
   followPort: false,
   pingTimeout: 10000,
   connectTimeout: 15000,
@@ -31,7 +32,6 @@ client.on('disconnect', (packet) => {
 client.on('close', () => console.log('Connection closed.'));
 client.on('error', (error) => console.error('Bot error:', error));
 
-// Keep this process alive; Railway restarts it if it exits unexpectedly.
 process.on('SIGTERM', () => {
   console.log('Stopping GalacticGuard...');
   try { client.close(); } catch {}
