@@ -16,6 +16,11 @@ const client = bedrock.createClient({
   port,
   username,
   offline: process.env.BEDROCK_OFFLINE_MODE === 'true',
+  // Keep the explicitly configured external Bedrock port; do not replace it
+  // with the internal port advertised by some Geyser/proxy setups.
+  followPort: false,
+  pingTimeout: 10000,
+  connectTimeout: 15000,
 });
 
 client.on('join', () => console.log('Connected to the Bedrock server.'));
