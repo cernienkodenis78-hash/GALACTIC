@@ -66,6 +66,8 @@ function connect() {
       host,
       port,
       username,
+      // Aternos server is Bedrock 1.26.45.1 (protocol 2169).
+      version: '1.26.45',
       offline: process.env.BEDROCK_OFFLINE_MODE === 'true',
       // Keep the configured external Bedrock port.
       followPort: false,
