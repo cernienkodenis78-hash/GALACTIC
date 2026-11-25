@@ -9,31 +9,129 @@ if (!host) {
   process.exit(1);
 }
 
-console.log(`Starting GalacticGuard for ${host}:${port} as ${username}`);
+let client = null;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let connecting = false;
+let stopping = false;
 
-const client = bedrock.createClient({
-  host,
-  port,
-  username,
-  offline: process.env.BEDROCK_OFFLINE_MODE === 'true',
-  // Keep the explicitly configured external Bedrock port; do not replace it
-  // with the internal port advertised by some Geyser/proxy setups.
-  followPort: false,
-  pingTimeout: 10000,
-  connectTimeout: 15000,
-});
+const BASE_RECONNECT_DELAY = 5000;
+const MAX_RECONNECT_DELAY = 60000;
 
-client.on('join', () => console.log('Connected to the Bedrock server.'));
-client.on('spawn', () => console.log('Bot spawned in the world.'));
-client.on('disconnect', (packet) => {
-  console.log('Disconnected:', packet);
-});
-client.on('close', () => console.log('Connection closed.'));
-client.on('error', (error) => console.error('Bot error:', error));
+function scheduleReconnect(reason) {
+  if (stopping || reconnectTimer) return;
 
-// Keep this process alive; Railway restarts it if it exits unexpectedly.
+  if (reason) {
+    console.warn('[GalacticGuard] Connection lost:', reason);
+  }
+
+  const delay = Math.min(
+    MAX_RECONNECT_DELAY,
+    BASE_RECONNECT_DELAY * (2 ** Math.min(reconnectAttempt, 4))
+  );
+  reconnectAttempt += 1;
+  connecting = false;
+
+  const oldClient = client;
+  client = null;
+  if (oldClient) {
+    try {
+      oldClient.close();
+    } catch {
+      // The connection may already be closed.
+    }
+  }
+
+  console.warn(
+    `[GalacticGuard] Retrying in ${Math.round(delay / 1000)} seconds (attempt ${reconnectAttempt}).`
+  );
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delay);
+}
+
+function connect() {
+  if (stopping || connecting || client) return;
+
+  connecting = true;
+  console.log(`Starting GalacticGuard for ${host}:${port} as ${username}`);
+
+  let bot;
+  try {
+    bot = bedrock.createClient({
+      host,
+      port,
+      username,
+      offline: process.env.BEDROCK_OFFLINE_MODE === 'true',
+      // Keep the configured external Bedrock port.
+      followPort: false,
+      pingTimeout: 20000,
+      connectTimeout: 30000,
+    });
+  } catch (error) {
+    console.error('[GalacticGuard] Could not create Bedrock client:', error);
+    scheduleReconnect(error.message);
+    return;
+  }
+
+  client = bot;
+
+  bot.on('join', () => {
+    console.log('[GalacticGuard] Connected to the Bedrock server.');
+  });
+
+  bot.on('spawn', () => {
+    console.log('[GalacticGuard] Bot spawned in the world.');
+    connecting = false;
+    reconnectAttempt = 0;
+  });
+
+  bot.on('disconnect', (packet) => {
+    console.warn('[GalacticGuard] Server disconnected the bot:', packet);
+    scheduleReconnect('server disconnected the bot');
+  });
+
+  bot.on('close', () => {
+    console.warn('[GalacticGuard] Connection closed.');
+    scheduleReconnect('connection closed');
+  });
+
+  bot.on('error', (error) => {
+    console.error('[GalacticGuard] Bedrock connection error:', error);
+    scheduleReconnect(error.message || 'Bedrock connection error');
+  });
+}
+
 process.on('SIGTERM', () => {
-  console.log('Stopping GalacticGuard...');
-  try { client.close(); } catch {}
+  console.log('[GalacticGuard] Stopping...');
+  stopping = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+
+  const oldClient = client;
+  client = null;
+  if (oldClient) {
+    try {
+      oldClient.close();
+    } catch {
+      // Ignore errors during shutdown.
+    }
+  }
+});
+
+process.on('SIGINT', () => {
+  stopping = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (client) {
+    try {
+      client.close();
+    } catch {
+      // Ignore errors during shutdown.
+    }
+  }
   process.exit(0);
 });
+
+connect();
