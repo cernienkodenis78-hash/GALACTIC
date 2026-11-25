@@ -11,6 +11,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "bedrock-protocol": "^3.40.0"
+    "bedrock-protocol": "3.61.0"
   }
 }
