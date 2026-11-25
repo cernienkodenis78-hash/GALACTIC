@@ -32,6 +32,13 @@ function scheduleReconnect(reason) {
   reconnectAttempt += 1;
   connecting = false;
 
+  // Set the timer BEFORE closing the old client. close() can emit another
+  // event synchronously, and that event must not schedule a second retry.
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delay);
+
   const oldClient = client;
   client = null;
   if (oldClient) {
@@ -45,11 +52,6 @@ function scheduleReconnect(reason) {
   console.warn(
     `[GalacticGuard] Retrying in ${Math.round(delay / 1000)} seconds (attempt ${reconnectAttempt}).`
   );
-
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, delay);
 }
 
 function connect() {
