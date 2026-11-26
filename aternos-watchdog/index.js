@@ -1,5 +1,5 @@
 const express = require("express");
-const bedrock = require("bedrock-protocol");
+const { ping } = require("bedrock-protocol");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -10,81 +10,66 @@ const CHECK_INTERVAL = Number(process.env.CHECK_INTERVAL_MS || 60_000);
 let status = {
   online: false,
   checkedAt: null,
-  message: "Очікуємо першої перевірки"
+  message: "Очікуємо першої перевірки",
+  server: null
 };
 
 let checking = false;
 
-function checkServer() {
+async function checkServer() {
   if (checking) return;
   if (!MC_HOST) {
     status = {
       online: false,
       checkedAt: new Date().toISOString(),
-      message: "Не задано змінну MC_HOST"
+      message: "Не задано змінну MC_HOST",
+      server: null
     };
     return;
   }
 
   checking = true;
-  let finished = false;
-  let timeout;
-
-  let client;
   try {
-    client = bedrock.createClient({
+    // A status ping checks the Bedrock server list response without joining the world.
+    const result = await ping({
       host: MC_HOST,
       port: MC_PORT,
-      username: "AternosWatchdog",
-      offline: true,
-      connectTimeout: 8000
+      transport: "raknet",
+      timeout: 7000
     });
+
+    status = {
+      online: true,
+      checkedAt: new Date().toISOString(),
+      message: "Сервер відповідає на Bedrock ping",
+      server: {
+        version: result.version ?? null,
+        playersOnline: result.playersOnline ?? result.players?.online ?? null,
+        playersMax: result.playersMax ?? result.players?.max ?? null,
+        motd: result.motd ?? null
+      }
+    };
+    console.log("Сервер онлайн: Bedrock ping успішний");
   } catch (error) {
-    checking = false;
     status = {
       online: false,
       checkedAt: new Date().toISOString(),
-      message: "Не вдалося створити з'єднання"
+      message: "Немає відповіді на Bedrock ping",
+      server: null
     };
-    console.error(error);
-    return;
-  }
-
-  function finish(online, message) {
-    if (finished) return;
-    finished = true;
-    clearTimeout(timeout);
-    status = {
-      online,
-      checkedAt: new Date().toISOString(),
-      message
-    };
+    console.log("Bedrock ping не вдався:", error?.message || "невідома помилка");
+  } finally {
     checking = false;
-
-    try {
-      client.close();
-    } catch {
-      // The connection may already be closed.
-    }
-    console.log(message);
   }
-
-  client.once("join", () => finish(true, "Сервер доступний"));
-  client.once("spawn", () => finish(true, "Сервер онлайн"));
-  client.once("error", () => finish(false, "Сервер недоступний"));
-  client.once("disconnect", () => finish(false, "Сервер розірвав з'єднання"));
-  client.once("close", () => {
-    if (!finished) finish(false, "З'єднання закрито до входу");
-  });
-
-  timeout = setTimeout(
-    () => finish(false, "Сервер не відповів за відведений час"),
-    10_000
-  );
 }
 
 app.get("/", (_req, res) => {
   const color = status.online ? "#16803c" : "#b42318";
+  const serverInfo = status.server
+    ? `<p>Версія: <code>${status.server.version ?? "невідомо"}</code></p>
+       <p>Гравці: <code>${status.server.playersOnline ?? "?"}/${status.server.playersMax ?? "?"}</code></p>`
+    : "";
+
   res.type("html").send(`<!doctype html>
 <html lang="uk">
 <head>
@@ -104,9 +89,10 @@ app.get("/", (_req, res) => {
     <h1>Aternos Watchdog</h1>
     <p class="status">${status.online ? "ONLINE" : "OFFLINE"}</p>
     <p>${status.message}</p>
+    ${serverInfo}
     <p>Остання перевірка: <code>${status.checkedAt || "ще не було"}</code></p>
     <p><a href="/status">Відкрити статус у JSON</a></p>
-    <p>Якщо сервер вимкнений, запусти його офіційним способом через Dawn Launcher або панель Aternos.</p>
+    <p>Якщо сервер вимкнений, запусти його офіційним способом через панель Aternos.</p>
   </main>
 </body>
 </html>`);
