@@ -92,6 +92,57 @@ function connect() {
     reconnectAttempt = 0;
   });
 
+  // Event-driven social activity: greet players and answer when addressed.
+  // This does not send periodic fake movement or keep the server awake.
+  let lastReplyAt = 0;
+
+  function sendChat(message) {
+    if (!client || client !== bot) return;
+    try {
+      bot.queue('text', {
+        needs_translation: false,
+        category: 'authored',
+        chat: 'chat',
+        whisper: 'whisper',
+        announcement: 'announcement',
+        type: 'chat',
+        source_name: username,
+        message,
+        xuid: '0',
+        platform_chat_id: '',
+        has_filtered_message: false,
+        filtered_message: ''
+      });
+      console.log('[GalacticGuard] Chat:', message);
+    } catch (error) {
+      console.warn('[GalacticGuard] Could not send chat message:', error.message);
+    }
+  }
+
+  bot.on('add_player', (packet) => {
+    const playerName = packet.username;
+    if (!playerName || playerName === username) return;
+    sendChat(`Привіт, ${playerName}! Я GalacticGuard 🌌`);
+  });
+
+  bot.on('text', (packet) => {
+    if (!packet || !packet.source_name || packet.source_name === username) return;
+    const message = String(packet.message || '');
+    if (!/galacticguard|галактик/i.test(message)) return;
+
+    const now = Date.now();
+    if (now - lastReplyAt < 20000) return;
+    lastReplyAt = now;
+
+    const replies = [
+      `Я тут, ${packet.source_name}! 🌌`,
+      'GalacticGuard на зв’язку!',
+      'Охороняю спавн і стежу за порядком 🙂'
+    ];
+    const reply = replies[Math.floor(Math.random() * replies.length)];
+    sendChat(reply);
+  });
+
   bot.on('disconnect', (packet) => {
     console.warn('[GalacticGuard] Server disconnected the bot:', packet);
     scheduleReconnect('server disconnected the bot');
